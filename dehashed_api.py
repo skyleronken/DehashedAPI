@@ -104,7 +104,7 @@ class DehashedAPI:
 
         page_results = list()
         parsed = BeautifulSoup(content, 'html.parser')
-        entries = parsed.select("a.entry-link")
+        entries = parsed.select("div.entry-link")
         for entry in entries:
             entry_id = entry.get('data-entry-id')
             try:
@@ -215,11 +215,12 @@ if __name__ == "__main__":
     parser.add_argument('--password', dest='pw', required=True, help='DeHashed Password')
     parser.add_argument('--dump', dest='csv', default=False, help="Dump results to CSV file")
     parser.add_argument('--ruler', dest='ruler', default=False, help="Dump {un}:{pw} format")
-    parser.add_argument('--pw', dest='pw', default=False, help="Dump list of passwords")
-    parser.add_argument('--un', dest='un', default=False, help="Dump list of usernames")
+    parser.add_argument('--pw', dest='pwf', default=False, help="Dump list of passwords")
+    parser.add_argument('--un', dest='unf', default=False, help="Dump list of usernames")
     parser.add_argument('--unpw', dest='unpw', default=False, help="Dump lost of usernames/passwords")
     parser.add_argument('--all', dest='all', default=False, help="Dump all formats")
     parser.add_argument('--confirm', action='store_false', help="Bypass confirmation")
+    parser.add_argument('--silent', action='store_true', help="Only dump results to STDOUT")
     parser.add_argument('query', help='Query String')
 
     args = parser.parse_args()
@@ -227,18 +228,25 @@ if __name__ == "__main__":
     pw = args.pw
     query_term = args.query
 
-    print("[*] Authenticating...")
+    if not args.silent:
+        print("[*] Authenticating...")
     try:
         api = DehashedAPI(un, pw)
-        print("[+] Success!")
-        print("[*] Checking Query: {}...".format(query_term))
+        if not args.silent:
+            print("[+] Success!")
+            print("[*] Checking Query: {}...".format(query_term))
         num = api.check_results(query_term)
         approx_time_sec = (num * THROTTLE) + ((num/5) * (THROTTLE * 5))
         approx_time_min = round((approx_time_sec/60),2)
-        print("[+] Results: {}".format(num))
-        if args.confirm:
-            input("[!] Press Enter to start fetching (Approximately {} minutes to complete)...".format(approx_time_min))
-        print("[*] Querying: {}...".format(query_term))
-        api.search(query_term, dump=args.csv, ruler=args.ruler, all=args.all, unpw=args.unpw, un=args.un, pw=args.pw)
+        
+        if not args.silent:
+            print("[+] Results: {}".format(num))
+            if args.confirm:
+                input("[!] Press Enter to start fetching (Approximately {} minutes to complete)...".format(approx_time_min))
+            print("[*] Querying: {}...".format(query_term))
+        api.search(query_term, dump=args.csv, ruler=args.ruler, all=args.all, unpw=args.unpw, un=args.unf, pw=args.pwf)
     except LoginError as e:
-        print("[-] Failed to authenticate")
+        if not args.silent:
+            print("[-] Failed to authenticate")
+        else:
+            print("[]")
