@@ -219,6 +219,7 @@ if __name__ == "__main__":
     parser.add_argument('--un', dest='un', default=False, help="Dump list of usernames")
     parser.add_argument('--unpw', dest='unpw', default=False, help="Dump lost of usernames/passwords")
     parser.add_argument('--all', dest='all', default=False, help="Dump all formats")
+    parser.add_argument('--confirm', action='store_false', help="Bypass confirmation")
     parser.add_argument('query', help='Query String')
 
     args = parser.parse_args()
@@ -235,7 +236,8 @@ if __name__ == "__main__":
         approx_time_sec = (num * THROTTLE) + ((num/5) * (THROTTLE * 5))
         approx_time_min = round((approx_time_sec/60),2)
         print("[+] Results: {}".format(num))
-        input("[!] Press Enter to start fetching (Approximately {} minutes to complete)...".format(approx_time_min))
+        if args.confirm:
+            input("[!] Press Enter to start fetching (Approximately {} minutes to complete)...".format(approx_time_min))
         print("[*] Querying: {}...".format(query_term))
         api.search(query_term, dump=args.csv, ruler=args.ruler, all=args.all, unpw=args.unpw, un=args.un, pw=args.pw)
     except LoginError as e:
