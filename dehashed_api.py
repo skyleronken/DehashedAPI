@@ -6,6 +6,7 @@ from math import ceil
 from json import loads
 from os import path, makedirs
 import requests
+import urllib
 import csv
 
 HEADERS = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:52.0) Gecko/20100101 Firefox/52.0"}
@@ -33,11 +34,64 @@ class EntryFailureError(Exception):
 
 class DehashedAPI:
 
+    username = None
+    api = None
     session = None
     error_count = 0
 
-    def __init__(self, username, password):
-        self.authenticate(username, password)
+    def __init__(self, username, password, api):
+        if password:
+            self.authenticate(username, password)
+        if api:
+            self.api = api
+            self.username = username
+
+    def fetch_results_api(self, query):
+        
+        cur_page = None
+        entries = list()
+
+        while(True):
+            results = self.api_query(query, page=cur_page)
+            success = results['success']
+
+            if success:
+                for entry in results['entries']:
+                    entry = {k: '' if not v else v for k, v in entry.items() }
+                    entries.append(entry)
+                
+                if len(entries) < results['total']:
+                    if cur_page:
+                        cur_page = cur_page + 1
+                    else:
+                        cur_page = 2 # start at page 2
+                    continue
+                else:
+                    #balance = results['balance']
+                    break
+                
+            else:
+                break
+
+        return entries
+
+    def api_query(self, query, page=None):
+    
+        if page:
+            page_var = "&page={}".format(page)
+        else:
+            page_var = ''
+
+        url = "https://api.dehashed.com/search?query={}{}".format(urllib.parse.quote_plus(query),page_var)
+        req = requests.get(url, auth=(self.username, self.api), headers={"Accept": "application/json"})
+        if req.status_code == 200:
+            return req.json()
+        if req.status_code == 400:
+            sleep(0.2)
+            results = self.api_query(query, page)
+            return results
+        else:
+            raise Exception("{} : {} - {}".format(req.status_code, req.reason, req.text))
 
     def authenticate(self, username, password):
 
@@ -54,7 +108,11 @@ class DehashedAPI:
 
     def search(self, query, stdout=True, dump=False, unpw=False, un=False, pw=False, ruler=False, all=False):
 
-        results = self.fetch_results(query)
+        if self.api:
+            results = self.fetch_results_api(query)
+        else:
+            results = self.fetch_results(query)
+
         sorted_results = sorted(results, key=lambda k: k.get('username') or k.get('email'))
 
         if all:
@@ -112,7 +170,7 @@ class DehashedAPI:
                 page_results.append(entry_data)
             except EntryFailureError:
                 error_count = error_count + 1
-                if error_count > self.ERROR_THRESHOLD:
+                if error_count > ERROR_THRESHOLD:
                     raise Exception("Error Threshold Exceeded")
             sleep(THROTTLE)
         return page_results
@@ -211,13 +269,14 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="DeHashed Results Parser")
 
-    parser.add_argument('--username', dest='un', required=True, help='DeHashed Username')
-    parser.add_argument('--password', dest='pw', required=True, help='DeHashed Password')
+    parser.add_argument('--username', dest='un', required=True, help='DeHashed Username/Email')
+    parser.add_argument('--api', dest='api', required=False, help="API Key if you have one")
+    parser.add_argument('--password', dest='pw', required=False, help='DeHashed Password')
     parser.add_argument('--dump', dest='csv', default=False, help="Dump results to CSV file")
     parser.add_argument('--ruler', dest='ruler', default=False, help="Dump {un}:{pw} format")
     parser.add_argument('--pw', dest='pwf', default=False, help="Dump list of passwords")
     parser.add_argument('--un', dest='unf', default=False, help="Dump list of usernames")
-    parser.add_argument('--unpw', dest='unpw', default=False, help="Dump lost of usernames/passwords")
+    parser.add_argument('--unpw', dest='unpw', default=False, help="Dump list of usernames/passwords")
     parser.add_argument('--all', dest='all', default=False, help="Dump all formats")
     parser.add_argument('--confirm', action='store_false', help="Bypass confirmation")
     parser.add_argument('--silent', action='store_true', help="Only dump results to STDOUT")
@@ -226,24 +285,29 @@ if __name__ == "__main__":
     args = parser.parse_args()
     un = args.un
     pw = args.pw
+    api = args.api
     query_term = args.query
 
-    if not args.silent:
+    if not args.silent and pw:
         print("[*] Authenticating...")
     try:
-        api = DehashedAPI(un, pw)
-        if not args.silent:
-            print("[+] Success!")
-            print("[*] Checking Query: {}...".format(query_term))
-        num = api.check_results(query_term)
-        approx_time_sec = (num * THROTTLE) + ((num/5) * (THROTTLE * 5))
-        approx_time_min = round((approx_time_sec/60),2)
+        api = DehashedAPI(un, pw, api)
+
+        if pw:
+            if not args.silent:
+                print("[*] Checking Query: {}...".format(query_term))
+            num = api.check_results(query_term)
+            approx_time_sec = (num * THROTTLE) + ((num/5) * (THROTTLE * 5))
+            approx_time_min = round((approx_time_sec/60),2)
+            
+            if not args.silent:
+                print("[+] Results: {}".format(num))
+                if args.confirm:
+                    input("[!] Press Enter to start fetching (Approximately {} minutes to complete)...".format(approx_time_min))
         
         if not args.silent:
-            print("[+] Results: {}".format(num))
-            if args.confirm:
-                input("[!] Press Enter to start fetching (Approximately {} minutes to complete)...".format(approx_time_min))
             print("[*] Querying: {}...".format(query_term))
+            
         api.search(query_term, dump=args.csv, ruler=args.ruler, all=args.all, unpw=args.unpw, un=args.unf, pw=args.pwf)
     except LoginError as e:
         if not args.silent:
